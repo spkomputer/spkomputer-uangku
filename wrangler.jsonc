@@ -1,0 +1,8 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "spkomputer-uangku",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "d1_databases": [{ "binding": "DB", "database_name": "uangku-db", "database_id": "ea2d9a4c-41dd-4393-a7d1-631131a91ca1" }]
+}
