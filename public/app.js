@@ -35,7 +35,8 @@ function accountOptions(selected = '') {
   return availableAccounts().map(a => `<option value="${esc(a.name)}" ${a.name === selected ? 'selected' : ''}>${a.status === 'optional' ? '◌' : '●'} ${esc(a.name)}${a.status === 'optional' ? ' · opsional' : ''}</option>`).join('');
 }
 function renderBankOptions() {
-  const currentChat = $('#chatBank').value || 'Tunai', currentForm = $('#bank').value || 'Tunai';
+  const preferred = localStorage.getItem('uangku_default_account') || 'Tunai';
+  const currentChat = $('#chatBank').value || preferred, currentForm = $('#bank').value || preferred;
   $('#chatBank').innerHTML = accountOptions(currentChat); $('#bank').innerHTML = accountOptions(currentForm);
   if (availableAccounts().some(a => a.name === currentChat)) $('#chatBank').value = currentChat;
   if (availableAccounts().some(a => a.name === currentForm)) $('#bank').value = currentForm;
@@ -121,8 +122,9 @@ function renderSettings() {
   $('#targetsView').innerHTML = activeTargets.length ? activeTargets.map(t => {
     const target = Number(t.targetAmount || 0), current = Number(t.savedAmount || 0), progress = target ? Math.min(100, Math.round(current / target * 100)) : 0;
     const due = t.dueDate ? new Date(t.dueDate + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Belum ditentukan';
-    return `<article class="target-card plan-card"><div class="plan-head"><span>${esc(t.icon)}</span><div><b>${esc(t.name)}</b><small>${esc(t.category)}</small></div><button data-edit-target="${esc(t.id)}">Edit</button></div><div class="plan-money"><strong>${rupiah(current)}</strong><small>dari ${target ? rupiah(target) : 'target belum diisi'}</small></div><div class="plan-progress"><i style="width:${progress}%"></i></div><div class="plan-meta"><span>${progress}% tercapai</span><span>📅 ${esc(due)}</span><span>🏦 ${esc(t.sourceAccount)}</span></div></article>`;
+    return `<article class="target-card plan-card"><div class="plan-head"><span>${esc(t.icon)}</span><div><b>${esc(t.name)}</b><small>${esc(t.category)}</small></div><div class="plan-actions"><button data-add-fund="${esc(t.id)}" class="add-fund">＋ Dana</button><button data-edit-target="${esc(t.id)}">Edit</button></div></div><div class="plan-money"><strong>${rupiah(current)}</strong><small>dari ${target ? rupiah(target) : 'target belum diisi'}</small></div><div class="plan-progress"><i style="width:${progress}%"></i></div><div class="plan-meta"><span>${progress}% tercapai</span><span>📅 ${esc(due)}</span><span>🏦 ${esc(t.sourceAccount)}</span></div></article>`;
   }).join('') : '<div class="empty">Belum ada rencana aktif. Tekan ＋ Target untuk mulai.</div>';
+  if ($('#defaultAccount')) { $('#defaultAccount').innerHTML = accountOptions(localStorage.getItem('uangku_default_account') || 'Tunai'); $('#defaultBook').value = localStorage.getItem('uangku_default_book') || 'servis'; }
 }
 
 async function saveAccount() {
@@ -150,6 +152,25 @@ function openTargetEditor(t = null) {
   $('#targetIcon').value = t?.icon || '🎯'; $('#targetName').value = t?.name || ''; $('#targetCategory').value = t?.category || '';
   $('#targetSource').innerHTML = accountOptions(t?.sourceAccount || availableAccounts()[0]?.name || 'Tunai'); $('#targetStatus').value = t?.status || 'active';
   $('#targetAmount').value = t?.targetAmount || ''; $('#targetSaved').value = t?.savedAmount || ''; $('#targetDueDate').value = t?.dueDate || ''; $('#targetEditor').showModal();
+}
+
+function openFundEditor(t) {
+  $('#fundTargetId').value = t.id; $('#fundTargetName').textContent = t.name; $('#fundAmount').value = ''; $('#fundEditor').showModal();
+}
+
+async function addTargetFund() {
+  const id = $('#fundTargetId').value, t = targets.find(x => x.id === id), added = Number($('#fundAmount').value.replace(/\D/g, ''));
+  if (!t || added < 1) throw Error('Nominal tambahan belum benar');
+  const saved = await api('/api/targets', { method: 'POST', body: JSON.stringify({ ...t, savedAmount: Number(t.savedAmount || 0) + added }) });
+  targets = targets.map(x => x.id === id ? saved : x); $('#fundEditor').close(); renderSettings(); toast(`${rupiah(added)} ditambahkan`);
+}
+
+function exportCsv() {
+  const cols = ['Tanggal','Jenis','Dompet','Rekening','Kategori','Catatan','Nominal'];
+  const quote = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const lines = [cols.map(quote).join(','), ...rows.map(x => [x.occurredAt, x.kind === 'income' ? 'Masuk' : 'Keluar', books[x.book]?.[0] || x.book, x.bank || 'Tunai', x.category || 'Umum', x.note, x.amount].map(quote).join(','))];
+  const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }), url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = `uangku-${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url); toast('Cadangan CSV dibuat');
 }
 
 function showView(view) {
@@ -184,7 +205,7 @@ function parseChat(t) {
 }
 function openForm(x = null) {
   editing = x?.id || null; kind = x?.kind || 'income'; $('#formTitle').textContent = x ? 'Edit transaksi' : 'Transaksi baru';
-  $('#book').value = x?.book || 'servis';
+  $('#book').value = x?.book || localStorage.getItem('uangku_default_book') || 'servis';
   if (x?.bank && !availableAccounts().some(a => a.name === x.bank)) $('#bank').insertAdjacentHTML('beforeend', `<option value="${esc(x.bank)}">${esc(x.bank)} · lama</option>`);
   $('#bank').value = x?.bank || ($('#chatBank').value || 'Tunai'); $('#category').value = x?.category || 'Umum';
   $('#amount').value = x?.amount || ''; $('#note').value = x?.note || ''; $('#date').value = x?.occurredAt || new Date().toISOString().slice(0, 10);
@@ -195,14 +216,19 @@ $('#loginForm').onsubmit = async e => { e.preventDefault(); const btn = e.submit
 $('#add').onclick = () => openForm(); $('#close').onclick = () => $('#editor').close(); $('#search').oninput = filterRows; $('#filter').onchange = filterRows; $('#reportMonth').onchange = () => { renderRecap(); renderEvaluation(); };
 $('#addAccount').onclick = () => openAccountEditor(); $('#closeAccount').onclick = () => $('#accountEditor').close();
 $('#addTarget').onclick = () => openTargetEditor(); $('#closeTarget').onclick = () => $('#targetEditor').close();
+$('#closeFund').onclick = () => $('#fundEditor').close();
 $('#accountForm').onsubmit = async e => { e.preventDefault(); try { await saveAccount(); } catch (err) { toast(err.message); } };
 $('#targetForm').onsubmit = async e => { e.preventDefault(); try { await saveTarget(); } catch (err) { toast(err.message); } };
+$('#fundForm').onsubmit = async e => { e.preventDefault(); try { await addTargetFund(); } catch (err) { toast(err.message); } };
+$('#savePreferences').onclick = () => { localStorage.setItem('uangku_default_account', $('#defaultAccount').value); localStorage.setItem('uangku_default_book', $('#defaultBook').value); renderBankOptions(); toast('Pilihan default disimpan'); };
+$('#exportCsv').onclick = exportCsv;
 $('#chatForm').onsubmit = async e => { e.preventDefault(); const b = parseChat($('#chatInput').value); if (!b.amount) return toast('Nominal belum terbaca'); try { rows.unshift(await api('/api/transactions', { method: 'POST', body: JSON.stringify(b) })); $('#chatInput').value = ''; render(); toast(`Tercatat melalui ${b.bank}`); } catch (err) { toast(err.message); } };
 $('#editForm').onsubmit = async e => { e.preventDefault(); const b = { id: editing, book: $('#book').value, kind, bank: $('#bank').value, category: $('#category').value, amount: Number($('#amount').value.replace(/\D/g, '')), note: $('#note').value, occurredAt: $('#date').value }; try { const x = await api('/api/transactions', { method: editing ? 'PUT' : 'POST', body: JSON.stringify(b) }); rows = editing ? rows.map(r => r.id === x.id ? x : r) : [x, ...rows]; $('#editor').close(); render(); toast('Tersimpan'); } catch (err) { toast(err.message); } };
 document.onclick = async e => {
   const view = e.target.closest('[data-view]')?.dataset.view; if (view) return showView(view);
   const accountId = e.target.dataset.editAccount; if (accountId) { openAccountEditor(accounts.find(a => a.id === accountId)); return; }
   const targetId = e.target.dataset.editTarget; if (targetId) { openTargetEditor(targets.find(t => t.id === targetId)); return; }
+  const fundId = e.target.dataset.addFund; if (fundId) { openFundEditor(targets.find(t => t.id === fundId)); return; }
   const k = e.target.dataset.kind; if (k) { kind = k; document.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('active', b.dataset.kind === kind)); }
   const id = e.target.dataset.edit; if (id) openForm(rows.find(x => x.id === id));
   const del = e.target.dataset.delete; if (del && confirm('Hapus transaksi ini?')) { try { await api('/api/transactions/remove', { method: 'POST', body: JSON.stringify({ id: del }) }); rows = rows.filter(x => x.id !== del); render(); toast('Transaksi dihapus'); } catch (err) { toast(err.message); } }
