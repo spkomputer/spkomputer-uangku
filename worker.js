@@ -16,7 +16,7 @@ async function authorized(request, env) {
 function clean(body) {
   const amount = Math.round(Number(body.amount));
   if (!["pribadi", "servis", "rental", "wifi"].includes(body.book) || !["income", "expense"].includes(body.kind) || !Number.isFinite(amount) || amount < 1) throw new Error("Data transaksi tidak valid");
-  const bank = ["Tunai", "Mandiri", "BCA", "BSI", "BRI", "CIMB", "SeaBank", "GoPay", "DANA", "Lainnya"].includes(body.bank) ? body.bank : "Tunai";
+  const bank = String(body.bank || "Tunai").trim().slice(0, 50) || "Tunai";
   return { book: body.book, kind: body.kind, amount, note: String(body.note || "Transaksi").slice(0, 160), category: String(body.category || "Umum").slice(0, 60), bank, occurredAt: /^\d{4}-\d{2}-\d{2}$/.test(body.occurredAt) ? body.occurredAt : today() };
 }
 
@@ -38,13 +38,37 @@ export default {
         if (!paymentId || !amount) return json({ error: "Pembayaran tidak valid" }, 400);
         const id = crypto.randomUUID(); const stamp = now(); const occurredAt = /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : today();
         const note = `Pembayaran WiFi ${String(body.customerName || body.customerId || "Pelanggan").slice(0, 80)} – ${String(body.period || "").slice(0, 30)}`;
-        const bank = ["Mandiri", "BCA", "BSI", "BRI", "CIMB", "SeaBank", "GoPay", "DANA", "Tunai", "Lainnya"].includes(body.bank) ? body.bank : "Mandiri";
+        const bank = String(body.bank || "Mandiri").trim().slice(0, 50) || "Mandiri";
         await env.DB.prepare("INSERT OR IGNORE INTO transactions (id,book,kind,amount,note,category,bank,occurred_at,source,source_key,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,"wifi","income",amount,note,"Pembayaran WiFi",bank,occurredAt,"wifi-sheet",paymentId,stamp,stamp).run();
         const row = await env.DB.prepare("SELECT id, source_key AS sourceKey FROM transactions WHERE source_key=?").bind(paymentId).first();
         return json({ ok: true, duplicate: row?.id !== id, id: row?.id });
       }
 
       if (path.startsWith("/api/") && !(await authorized(request, env))) return json({ error: "Silakan login" }, 401);
+      if (path === "/api/settings" && request.method === "GET") {
+        await env.DB.prepare("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)").run();
+        const row = await env.DB.prepare("SELECT value FROM app_settings WHERE key='finance_config'").first();
+        return json(row ? JSON.parse(row.value) : null);
+      }
+      if (path === "/api/settings" && request.method === "PUT") {
+        await env.DB.prepare("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)").run();
+        const body = await request.json();
+        const banks = Array.isArray(body.banks) ? body.banks.slice(0,30).map(x => ({
+          name:String(x.name||"").trim().slice(0,50),
+          purpose:String(x.purpose||"").trim().slice(0,120),
+          status:["active","limited","inactive"].includes(x.status) ? x.status : "active"
+        })).filter(x=>x.name) : [];
+        const planItems = Array.isArray(body.planItems) ? body.planItems.slice(0,40).map(x => ({
+          category:String(x.category||"").trim().slice(0,60),
+          label:String(x.label||"").trim().slice(0,80),
+          icon:String(x.icon||"💰").trim().slice(0,8),
+          bank:String(x.bank||"").trim().slice(0,50),
+          enabled:x.enabled !== false
+        })).filter(x=>x.category&&x.label) : [];
+        const value = JSON.stringify({banks,planItems});
+        await env.DB.prepare("INSERT INTO app_settings(key,value,updated_at) VALUES('finance_config',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").bind(value,now()).run();
+        return json({ok:true,banks,planItems});
+      }
       if (path === "/api/transactions" && request.method === "GET") {
         const { results } = await env.DB.prepare("SELECT id,book,kind,amount,note,category,bank,occurred_at AS occurredAt,source,source_key AS sourceKey,created_at AS createdAt FROM transactions ORDER BY occurred_at DESC, created_at DESC LIMIT 1000").all(); return json(results);
       }
