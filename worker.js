@@ -16,7 +16,8 @@ async function authorized(request, env) {
 function clean(body) {
   const amount = Math.round(Number(body.amount));
   if (!["pribadi", "servis", "rental", "wifi"].includes(body.book) || !["income", "expense"].includes(body.kind) || !Number.isFinite(amount) || amount < 1) throw new Error("Data transaksi tidak valid");
-  return { book: body.book, kind: body.kind, amount, note: String(body.note || "Transaksi").slice(0, 160), category: String(body.category || "Umum").slice(0, 60), occurredAt: /^\d{4}-\d{2}-\d{2}$/.test(body.occurredAt) ? body.occurredAt : today() };
+  const bank = ["Tunai", "Mandiri", "BCA", "BSI", "BRI", "GoPay", "Lainnya"].includes(body.bank) ? body.bank : "Tunai";
+  return { book: body.book, kind: body.kind, amount, note: String(body.note || "Transaksi").slice(0, 160), category: String(body.category || "Umum").slice(0, 60), bank, occurredAt: /^\d{4}-\d{2}-\d{2}$/.test(body.occurredAt) ? body.occurredAt : today() };
 }
 
 export default {
@@ -37,23 +38,24 @@ export default {
         if (!paymentId || !amount) return json({ error: "Pembayaran tidak valid" }, 400);
         const id = crypto.randomUUID(); const stamp = now(); const occurredAt = /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : today();
         const note = `Pembayaran WiFi ${String(body.customerName || body.customerId || "Pelanggan").slice(0, 80)} – ${String(body.period || "").slice(0, 30)}`;
-        await env.DB.prepare("INSERT OR IGNORE INTO transactions (id,book,kind,amount,note,category,occurred_at,source,source_key,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)").bind(id,"wifi","income",amount,note,"Pembayaran WiFi",occurredAt,"wifi-sheet",paymentId,stamp,stamp).run();
+        const bank = ["Mandiri", "BCA", "BSI", "BRI", "GoPay", "Tunai", "Lainnya"].includes(body.bank) ? body.bank : "Mandiri";
+        await env.DB.prepare("INSERT OR IGNORE INTO transactions (id,book,kind,amount,note,category,bank,occurred_at,source,source_key,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,"wifi","income",amount,note,"Pembayaran WiFi",bank,occurredAt,"wifi-sheet",paymentId,stamp,stamp).run();
         const row = await env.DB.prepare("SELECT id, source_key AS sourceKey FROM transactions WHERE source_key=?").bind(paymentId).first();
         return json({ ok: true, duplicate: row?.id !== id, id: row?.id });
       }
 
       if (path.startsWith("/api/") && !(await authorized(request, env))) return json({ error: "Silakan login" }, 401);
       if (path === "/api/transactions" && request.method === "GET") {
-        const { results } = await env.DB.prepare("SELECT id,book,kind,amount,note,category,occurred_at AS occurredAt,source,source_key AS sourceKey,created_at AS createdAt FROM transactions ORDER BY occurred_at DESC, created_at DESC LIMIT 1000").all(); return json(results);
+        const { results } = await env.DB.prepare("SELECT id,book,kind,amount,note,category,bank,occurred_at AS occurredAt,source,source_key AS sourceKey,created_at AS createdAt FROM transactions ORDER BY occurred_at DESC, created_at DESC LIMIT 1000").all(); return json(results);
       }
       if (path === "/api/transactions" && request.method === "POST") {
         const b = clean(await request.json()); const id = crypto.randomUUID(); const stamp = now();
-        await env.DB.prepare("INSERT INTO transactions (id,book,kind,amount,note,category,occurred_at,source,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)").bind(id,b.book,b.kind,b.amount,b.note,b.category,b.occurredAt,"manual",stamp,stamp).run(); return json({ id, ...b, source:"manual", createdAt:stamp }, 201);
+        await env.DB.prepare("INSERT INTO transactions (id,book,kind,amount,note,category,bank,occurred_at,source,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)").bind(id,b.book,b.kind,b.amount,b.note,b.category,b.bank,b.occurredAt,"manual",stamp,stamp).run(); return json({ id, ...b, source:"manual", createdAt:stamp }, 201);
       }
       if (path === "/api/transactions" && request.method === "PUT") {
         const body = await request.json(); const b = clean(body); if (!body.id) return json({ error:"ID kosong" },400);
-        await env.DB.prepare("UPDATE transactions SET book=?,kind=?,amount=?,note=?,category=?,occurred_at=?,updated_at=? WHERE id=?").bind(b.book,b.kind,b.amount,b.note,b.category,b.occurredAt,now(),body.id).run();
-        return json(await env.DB.prepare("SELECT id,book,kind,amount,note,category,occurred_at AS occurredAt,source,created_at AS createdAt FROM transactions WHERE id=?").bind(body.id).first());
+        await env.DB.prepare("UPDATE transactions SET book=?,kind=?,amount=?,note=?,category=?,bank=?,occurred_at=?,updated_at=? WHERE id=?").bind(b.book,b.kind,b.amount,b.note,b.category,b.bank,b.occurredAt,now(),body.id).run();
+        return json(await env.DB.prepare("SELECT id,book,kind,amount,note,category,bank,occurred_at AS occurredAt,source,created_at AS createdAt FROM transactions WHERE id=?").bind(body.id).first());
       }
       if (path === "/api/transactions/remove" && request.method === "POST") {
         const { id } = await request.json(); if (!id) return json({ error:"ID kosong" },400); const result = await env.DB.prepare("DELETE FROM transactions WHERE id=?").bind(id).run(); return json({ ok:true, deleted:result.meta.changes });
