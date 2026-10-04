@@ -45,3 +45,32 @@ header{background:#fffffff2;border-bottom:1px solid #e8edf5;box-shadow:0 3px 18p
 .plan-actions{display:flex;gap:5px}.plan-actions .add-fund{background:#dcfce7;color:#047857}.preference-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.preference-grid label{display:grid;gap:6px;color:#64748b;font-size:13px;font-weight:800}.preference-grid select{height:44px;border:1px solid #dce3ed;background:#f8fafc;border-radius:13px;padding:0 11px}.primary.compact{width:auto;height:43px;padding:0 16px;margin-top:12px}.outline-action{margin-top:10px;border:1px solid #bfd0ef;background:#f8fbff;color:#1d4ed8;border-radius:13px;padding:11px 14px;font-weight:800}.data-tools{background:linear-gradient(135deg,#fff,#f4f8ff)}
 @media(max-width:560px){.plan-summary{grid-template-columns:1fr}.intro-action{padding:9px 10px;font-size:12px}.target-name-row,.money-row{grid-template-columns:1fr}.plan-money{align-items:flex-start;flex-direction:column}.plan-meta{display:grid;grid-template-columns:1fr 1fr}.account-card p{white-space:normal}}
 @media(max-width:560px){.plan-head{align-items:flex-start}.plan-actions{flex-direction:column}.plan-actions button{padding:7px 9px}.preference-grid{grid-template-columns:1fr}}
+
+/* Penyempurnaan layar HP */
+.page:not([hidden]){animation:pageIn .24s ease-out}
+@keyframes pageIn{from{opacity:.35;transform:translateY(7px)}to{opacity:1;transform:none}}
+button{transition:transform .15s ease,background .15s ease,box-shadow .15s ease}button:active{transform:scale(.96)}
+.balance{position:relative;overflow:hidden}.balance::before,.balance::after{content:"";position:absolute;border-radius:50%;background:#ffffff12;pointer-events:none}.balance::before{width:170px;height:170px;right:-65px;top:-85px}.balance::after{width:105px;height:105px;right:42px;bottom:-75px}.balance>*{position:relative;z-index:1}
+.chips,.wallets{-webkit-overflow-scrolling:touch;scrollbar-width:none}.chips::-webkit-scrollbar,.wallets::-webkit-scrollbar{display:none}
+input:focus,select:focus{outline:3px solid #bfdbfe;border-color:#60a5fa!important}
+
+@media(max-width:560px){
+  body{background:#f3f6fb}
+  header{padding:10px 12px}.logo{width:40px;height:40px;border-radius:13px}.brand b{font-size:15px}.brand small{font-size:11px}
+  .header-actions .soft{min-height:38px;padding:7px 10px}.wrap{padding:13px 11px 106px;gap:14px}.page{gap:14px}
+  .balance{padding:19px;border-radius:23px}.balance>span{font-size:13px;color:#dbeafe}.balance>strong{font-size:29px;line-height:1.2;margin-top:6px}.stats{gap:8px;margin-top:15px}.stats div{padding:11px;border-radius:14px}.stats small{font-size:11px;color:#dbeafe}.stats b{font-size:14px;margin-top:3px}
+  section>h2,.chat h2,.panel h2{font-size:17px}section>p,.chat p,.panel p{font-size:13px}
+  .wallets{display:grid;grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:142px;gap:9px;overflow-x:auto;margin:0 -11px;padding:2px 11px 8px}.wallet{min-height:116px;padding:13px;border-radius:18px}.wallet i{width:36px;height:36px}.wallet b{font-size:14px}.wallet small{font-size:12px}
+  .chat,.panel{padding:15px;border-radius:21px}.chat form{gap:7px}.chat input{height:47px;border-radius:14px}.chat form button{width:47px;border-radius:14px;box-shadow:0 7px 16px #2563eb36}.quick-bank{display:grid;grid-template-columns:auto 1fr;align-items:center;padding:8px 10px}.quick-bank select{width:100%;max-width:none}.chips{margin-right:-15px;padding-right:15px}.chips button{font-size:12px;padding:8px 11px}
+  .filters{display:grid;grid-template-columns:minmax(0,1fr) 108px}.filters input,.filters select{width:100%;max-width:none;height:43px;border-radius:13px}
+  .tx{display:grid;grid-template-columns:42px minmax(0,1fr);gap:7px 10px;padding:12px;border-radius:18px}.tx-icon{grid-row:1 / span 2}.tx-main b{font-size:14px}.tx-main>small{font-size:12px}.tx-side{grid-column:2;display:flex;align-items:center;justify-content:space-between;text-align:left}.tx-side>b{font-size:14px}.actions{margin:0}.actions button{width:30px;height:30px}
+  .tx-tags{margin-top:2px}.bank-tag,.category-tag{font-size:10px!important;padding:3px 7px}
+  .recap-totals,.plan-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.recap-totals article,.plan-summary article{padding:10px 8px;border-radius:14px;min-width:0}.recap-totals small,.plan-summary small{font-size:10px}.recap-totals strong,.plan-summary strong{font-size:12px;white-space:nowrap}
+  .breakdown-row{grid-template-columns:minmax(0,1fr) auto;gap:4px 7px}.breakdown-row small{font-size:11px}.breakdown-row strong{font-size:12px}
+  .evaluation-card{padding:19px;border-radius:23px}.evaluation-card h2{font-size:23px}.evaluation-card p{font-size:13px}.evaluation-card>strong{font-size:13px}
+  .page-intro{display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;padding:14px;border-radius:21px}.page-intro>span{width:44px;height:44px;border-radius:14px}.page-intro h2{font-size:18px}.page-intro p{font-size:12px}.intro-action{grid-column:1/-1;width:100%}
+  .target-card.plan-card{padding:14px;border-radius:18px}.plan-head{gap:9px}.plan-head>span{flex-basis:40px;height:40px}.plan-head b{font-size:14px}.plan-actions button{font-size:11px}.plan-money strong{font-size:18px}.plan-money small{font-size:12px}.plan-meta span{font-size:10px}
+  .account-card{padding:11px}.account-card b{font-size:14px}.account-card p{font-size:12px}.account-card button{padding:8px 10px;font-size:12px}
+  dialog{position:fixed;inset:auto 0 0 0;width:100%;max-width:none;max-height:92dvh;margin:0;border-radius:25px 25px 0 0;overflow:auto}dialog form{padding:18px 16px max(20px,env(safe-area-inset-bottom))}dialog::backdrop{background:#0f172a80}.type-tabs{position:sticky;top:0;z-index:1}
+  #toast{top:auto;bottom:92px;width:max-content;max-width:calc(100% - 24px);text-align:center}
+}
