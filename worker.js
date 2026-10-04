@@ -29,7 +29,9 @@ function cleanAccount(body) {
 function cleanTarget(body) {
   const name = String(body.name || "").trim().slice(0, 80), category = String(body.category || "Umum").trim().slice(0, 60);
   if (!name) throw new Error("Nama target wajib diisi");
-  return { id: String(body.id || crypto.randomUUID()).slice(0, 80), name, category, icon: String(body.icon || "🎯").trim().slice(0, 8), sourceAccount: String(body.sourceAccount || "Mandiri").trim().slice(0, 40), status: body.status === "inactive" ? "inactive" : "active", sortOrder: Math.round(Number(body.sortOrder) || 99) };
+  const targetAmount = Math.max(0, Math.round(Number(body.targetAmount) || 0)), savedAmount = Math.max(0, Math.round(Number(body.savedAmount) || 0));
+  const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(body.dueDate) ? body.dueDate : "";
+  return { id: String(body.id || crypto.randomUUID()).slice(0, 80), name, category, icon: String(body.icon || "🎯").trim().slice(0, 8), sourceAccount: String(body.sourceAccount || "Mandiri").trim().slice(0, 40), status: body.status === "inactive" ? "inactive" : "active", sortOrder: Math.round(Number(body.sortOrder) || 99), targetAmount, savedAmount, dueDate };
 }
 
 export default {
@@ -59,7 +61,7 @@ export default {
       if (path.startsWith("/api/") && !(await authorized(request, env))) return json({ error: "Silakan login" }, 401);
       if (path === "/api/settings" && request.method === "GET") {
         const accounts = await env.DB.prepare("SELECT id,name,purpose,status,sort_order AS sortOrder FROM accounts ORDER BY sort_order,name").all();
-        const targets = await env.DB.prepare("SELECT id,name,category,icon,source_account AS sourceAccount,status,sort_order AS sortOrder FROM targets ORDER BY sort_order,name").all();
+        const targets = await env.DB.prepare("SELECT id,name,category,icon,source_account AS sourceAccount,status,sort_order AS sortOrder,target_amount AS targetAmount,saved_amount AS savedAmount,due_date AS dueDate FROM targets ORDER BY sort_order,name").all();
         return json({ accounts: accounts.results, targets: targets.results });
       }
       if (path === "/api/accounts" && request.method === "POST") {
@@ -69,7 +71,7 @@ export default {
       }
       if (path === "/api/targets" && request.method === "POST") {
         const b = cleanTarget(await request.json());
-        await env.DB.prepare("INSERT INTO targets (id,name,category,icon,source_account,status,sort_order,updated_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,category=excluded.category,icon=excluded.icon,source_account=excluded.source_account,status=excluded.status,sort_order=excluded.sort_order,updated_at=excluded.updated_at").bind(b.id,b.name,b.category,b.icon,b.sourceAccount,b.status,b.sortOrder,now()).run();
+        await env.DB.prepare("INSERT INTO targets (id,name,category,icon,source_account,status,sort_order,target_amount,saved_amount,due_date,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,category=excluded.category,icon=excluded.icon,source_account=excluded.source_account,status=excluded.status,sort_order=excluded.sort_order,target_amount=excluded.target_amount,saved_amount=excluded.saved_amount,due_date=excluded.due_date,updated_at=excluded.updated_at").bind(b.id,b.name,b.category,b.icon,b.sourceAccount,b.status,b.sortOrder,b.targetAmount,b.savedAmount,b.dueDate,now()).run();
         return json(b);
       }
       if (path === "/api/transactions" && request.method === "GET") {
