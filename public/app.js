@@ -114,29 +114,42 @@ function renderEvaluation() {
 
 function renderSettings() {
   const statusText = { active: 'Aktif', optional: 'Opsional', inactive: 'Nonaktif' };
-  $('#accountSettings').innerHTML = accounts.map(a => `<article class="setting-card" data-account-card="${esc(a.id)}"><div class="setting-title"><span class="account-mark">🏦</span><div><b>${esc(a.name)}</b><small class="status-${a.status}">${statusText[a.status]}</small></div></div><div class="setting-fields"><label>Nama rekening<input data-field="name" value="${esc(a.name)}"></label><label>Fungsi<input data-field="purpose" value="${esc(a.purpose)}" placeholder="Kegunaan rekening"></label><label>Status<select data-field="status"><option value="active" ${a.status === 'active' ? 'selected' : ''}>Aktif</option><option value="optional" ${a.status === 'optional' ? 'selected' : ''}>Opsional</option><option value="inactive" ${a.status === 'inactive' ? 'selected' : ''}>Nonaktif</option></select></label></div><button class="save-setting" data-save-account="${esc(a.id)}">Simpan rekening</button></article>`).join('');
-  const sourceOptions = selected => accounts.map(a => `<option value="${esc(a.name)}" ${a.name === selected ? 'selected' : ''}>${esc(a.name)}</option>`).join('');
-  $('#targetSettings').innerHTML = targets.map(t => `<article class="setting-card" data-target-card="${esc(t.id)}"><div class="setting-title"><span class="target-icon">${esc(t.icon)}</span><div><b>${esc(t.name)}</b><small>${esc(t.category)}</small></div></div><div class="setting-fields target-fields"><label>Ikon<input data-field="icon" value="${esc(t.icon)}" maxlength="8"></label><label>Nama target<input data-field="name" value="${esc(t.name)}"></label><label>Kategori<input data-field="category" value="${esc(t.category)}"></label><label>Sumber<select data-field="sourceAccount">${sourceOptions(t.sourceAccount)}</select></label><label>Status<select data-field="status"><option value="active" ${t.status === 'active' ? 'selected' : ''}>Aktif</option><option value="inactive" ${t.status === 'inactive' ? 'selected' : ''}>Nonaktif</option></select></label></div><button class="save-setting" data-save-target="${esc(t.id)}">Simpan target</button></article>`).join('');
+  $('#accountSettings').innerHTML = accounts.map(a => `<article class="account-card"><span class="account-mark">🏦</span><div><b>${esc(a.name)}</b><p>${esc(a.purpose || 'Fungsi belum diisi')}</p><small class="status-${a.status}">${statusText[a.status]}</small></div><button data-edit-account="${esc(a.id)}">Edit</button></article>`).join('');
   const activeTargets = targets.filter(t => t.status === 'active');
-  $('#targetsView').innerHTML = activeTargets.length ? activeTargets.map(t => `<article class="target-card"><span>${esc(t.icon)}</span><div><b>${esc(t.name)}</b><small>${esc(t.category)}</small><em>Sumber: ${esc(t.sourceAccount)}</em></div></article>`).join('') : '<div class="empty">Belum ada item rencana aktif</div>';
+  const total = activeTargets.reduce((s, t) => s + Number(t.targetAmount || 0), 0), saved = activeTargets.reduce((s, t) => s + Number(t.savedAmount || 0), 0);
+  $('#planTotal').textContent = rupiah(total); $('#planSaved').textContent = rupiah(saved); $('#planGap').textContent = rupiah(Math.max(0, total - saved));
+  $('#targetsView').innerHTML = activeTargets.length ? activeTargets.map(t => {
+    const target = Number(t.targetAmount || 0), current = Number(t.savedAmount || 0), progress = target ? Math.min(100, Math.round(current / target * 100)) : 0;
+    const due = t.dueDate ? new Date(t.dueDate + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Belum ditentukan';
+    return `<article class="target-card plan-card"><div class="plan-head"><span>${esc(t.icon)}</span><div><b>${esc(t.name)}</b><small>${esc(t.category)}</small></div><button data-edit-target="${esc(t.id)}">Edit</button></div><div class="plan-money"><strong>${rupiah(current)}</strong><small>dari ${target ? rupiah(target) : 'target belum diisi'}</small></div><div class="plan-progress"><i style="width:${progress}%"></i></div><div class="plan-meta"><span>${progress}% tercapai</span><span>📅 ${esc(due)}</span><span>🏦 ${esc(t.sourceAccount)}</span></div></article>`;
+  }).join('') : '<div class="empty">Belum ada rencana aktif. Tekan ＋ Target untuk mulai.</div>';
 }
 
-async function saveAccount(id) {
-  const card = document.querySelector(`[data-account-card="${CSS.escape(id)}"]`);
-  const old = accounts.find(a => a.id === id) || {};
-  const body = { id, name: card.querySelector('[data-field="name"]').value, purpose: card.querySelector('[data-field="purpose"]').value, status: card.querySelector('[data-field="status"]').value, sortOrder: old.sortOrder || 99 };
+async function saveAccount() {
+  const id = $('#accountId').value, old = accounts.find(a => a.id === id) || {};
+  const body = { id, name: $('#accountName').value, purpose: $('#accountPurpose').value, status: $('#accountStatus').value, sortOrder: old.sortOrder || 99 };
   const saved = await api('/api/accounts', { method: 'POST', body: JSON.stringify(body) });
   accounts = accounts.some(a => a.id === id) ? accounts.map(a => a.id === id ? saved : a) : [...accounts, saved];
-  renderBankOptions(); renderSettings(); toast('Rekening disimpan');
+  $('#accountEditor').close(); renderBankOptions(); renderSettings(); toast('Rekening disimpan');
 }
 
-async function saveTarget(id) {
-  const card = document.querySelector(`[data-target-card="${CSS.escape(id)}"]`);
-  const old = targets.find(t => t.id === id) || {};
-  const body = { id, name: card.querySelector('[data-field="name"]').value, category: card.querySelector('[data-field="category"]').value, icon: card.querySelector('[data-field="icon"]').value, sourceAccount: card.querySelector('[data-field="sourceAccount"]').value, status: card.querySelector('[data-field="status"]').value, sortOrder: old.sortOrder || 99 };
+async function saveTarget() {
+  const id = $('#targetId').value, old = targets.find(t => t.id === id) || {};
+  const body = { id, name: $('#targetName').value, category: $('#targetCategory').value, icon: $('#targetIcon').value, sourceAccount: $('#targetSource').value, status: $('#targetStatus').value, targetAmount: Number($('#targetAmount').value.replace(/\D/g, '')), savedAmount: Number($('#targetSaved').value.replace(/\D/g, '')), dueDate: $('#targetDueDate').value, sortOrder: old.sortOrder || 99 };
   const saved = await api('/api/targets', { method: 'POST', body: JSON.stringify(body) });
   targets = targets.some(t => t.id === id) ? targets.map(t => t.id === id ? saved : t) : [...targets, saved];
-  renderSettings(); toast('Target disimpan');
+  $('#targetEditor').close(); renderSettings(); toast('Rencana disimpan');
+}
+
+function openAccountEditor(a = null) {
+  $('#accountTitle').textContent = a ? 'Edit rekening' : 'Tambah rekening'; $('#accountId').value = a?.id || crypto.randomUUID();
+  $('#accountName').value = a?.name || ''; $('#accountPurpose').value = a?.purpose || ''; $('#accountStatus').value = a?.status || 'active'; $('#accountEditor').showModal();
+}
+function openTargetEditor(t = null) {
+  $('#targetTitle').textContent = t ? 'Edit rencana' : 'Tambah rencana'; $('#targetId').value = t?.id || crypto.randomUUID();
+  $('#targetIcon').value = t?.icon || '🎯'; $('#targetName').value = t?.name || ''; $('#targetCategory').value = t?.category || '';
+  $('#targetSource').innerHTML = accountOptions(t?.sourceAccount || availableAccounts()[0]?.name || 'Tunai'); $('#targetStatus').value = t?.status || 'active';
+  $('#targetAmount').value = t?.targetAmount || ''; $('#targetSaved').value = t?.savedAmount || ''; $('#targetDueDate').value = t?.dueDate || ''; $('#targetEditor').showModal();
 }
 
 function showView(view) {
@@ -180,14 +193,16 @@ function openForm(x = null) {
 
 $('#loginForm').onsubmit = async e => { e.preventDefault(); const btn = e.submitter || $('#loginForm button'); $('#loginError').textContent = ''; btn.disabled = true; btn.textContent = 'Memeriksa…'; try { await api('/api/login', { method: 'POST', body: JSON.stringify({ password: $('#password').value }) }); showApp(); } catch (err) { $('#loginError').textContent = err.message || 'Tidak dapat masuk. Coba lagi.'; } finally { btn.disabled = false; btn.textContent = 'Masuk'; } };
 $('#add').onclick = () => openForm(); $('#close').onclick = () => $('#editor').close(); $('#search').oninput = filterRows; $('#filter').onchange = filterRows; $('#reportMonth').onchange = () => { renderRecap(); renderEvaluation(); };
-$('#addAccount').onclick = () => { const id = crypto.randomUUID(); accounts.push({ id, name: 'Rekening Baru', purpose: '', status: 'active', sortOrder: 99 }); renderSettings(); document.querySelector(`[data-account-card="${CSS.escape(id)}"] input`).focus(); };
-$('#addTarget').onclick = () => { const id = crypto.randomUUID(); targets.push({ id, name: 'Target Baru', category: 'Umum', icon: '🎯', sourceAccount: availableAccounts()[0]?.name || 'Tunai', status: 'active', sortOrder: 99 }); renderSettings(); document.querySelector(`[data-target-card="${CSS.escape(id)}"] input`).focus(); };
+$('#addAccount').onclick = () => openAccountEditor(); $('#closeAccount').onclick = () => $('#accountEditor').close();
+$('#addTarget').onclick = () => openTargetEditor(); $('#closeTarget').onclick = () => $('#targetEditor').close();
+$('#accountForm').onsubmit = async e => { e.preventDefault(); try { await saveAccount(); } catch (err) { toast(err.message); } };
+$('#targetForm').onsubmit = async e => { e.preventDefault(); try { await saveTarget(); } catch (err) { toast(err.message); } };
 $('#chatForm').onsubmit = async e => { e.preventDefault(); const b = parseChat($('#chatInput').value); if (!b.amount) return toast('Nominal belum terbaca'); try { rows.unshift(await api('/api/transactions', { method: 'POST', body: JSON.stringify(b) })); $('#chatInput').value = ''; render(); toast(`Tercatat melalui ${b.bank}`); } catch (err) { toast(err.message); } };
 $('#editForm').onsubmit = async e => { e.preventDefault(); const b = { id: editing, book: $('#book').value, kind, bank: $('#bank').value, category: $('#category').value, amount: Number($('#amount').value.replace(/\D/g, '')), note: $('#note').value, occurredAt: $('#date').value }; try { const x = await api('/api/transactions', { method: editing ? 'PUT' : 'POST', body: JSON.stringify(b) }); rows = editing ? rows.map(r => r.id === x.id ? x : r) : [x, ...rows]; $('#editor').close(); render(); toast('Tersimpan'); } catch (err) { toast(err.message); } };
 document.onclick = async e => {
   const view = e.target.closest('[data-view]')?.dataset.view; if (view) return showView(view);
-  const saveAccountId = e.target.dataset.saveAccount; if (saveAccountId) { try { await saveAccount(saveAccountId); } catch (err) { toast(err.message); } return; }
-  const saveTargetId = e.target.dataset.saveTarget; if (saveTargetId) { try { await saveTarget(saveTargetId); } catch (err) { toast(err.message); } return; }
+  const accountId = e.target.dataset.editAccount; if (accountId) { openAccountEditor(accounts.find(a => a.id === accountId)); return; }
+  const targetId = e.target.dataset.editTarget; if (targetId) { openTargetEditor(targets.find(t => t.id === targetId)); return; }
   const k = e.target.dataset.kind; if (k) { kind = k; document.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('active', b.dataset.kind === kind)); }
   const id = e.target.dataset.edit; if (id) openForm(rows.find(x => x.id === id));
   const del = e.target.dataset.delete; if (del && confirm('Hapus transaksi ini?')) { try { await api('/api/transactions/remove', { method: 'POST', body: JSON.stringify({ id: del }) }); rows = rows.filter(x => x.id !== del); render(); toast('Transaksi dihapus'); } catch (err) { toast(err.message); } }
