@@ -16,7 +16,7 @@ async function authorized(request, env) {
 function clean(body) {
   const amount = Math.round(Number(body.amount));
   if (!["pribadi", "servis", "rental", "wifi"].includes(body.book) || !["income", "expense"].includes(body.kind) || !Number.isFinite(amount) || amount < 1) throw new Error("Data transaksi tidak valid");
-  const bank = ["Tunai", "Mandiri", "BCA", "BSI", "BRI", "GoPay", "Lainnya"].includes(body.bank) ? body.bank : "Tunai";
+  const bank = ["Tunai", "Mandiri", "BCA", "BSI", "BRI", "CIMB", "SeaBank", "GoPay", "DANA", "Lainnya"].includes(body.bank) ? body.bank : "Tunai";
   return { book: body.book, kind: body.kind, amount, note: String(body.note || "Transaksi").slice(0, 160), category: String(body.category || "Umum").slice(0, 60), bank, occurredAt: /^\d{4}-\d{2}-\d{2}$/.test(body.occurredAt) ? body.occurredAt : today() };
 }
 
@@ -38,7 +38,7 @@ export default {
         if (!paymentId || !amount) return json({ error: "Pembayaran tidak valid" }, 400);
         const id = crypto.randomUUID(); const stamp = now(); const occurredAt = /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : today();
         const note = `Pembayaran WiFi ${String(body.customerName || body.customerId || "Pelanggan").slice(0, 80)} – ${String(body.period || "").slice(0, 30)}`;
-        const bank = ["Mandiri", "BCA", "BSI", "BRI", "GoPay", "Tunai", "Lainnya"].includes(body.bank) ? body.bank : "Mandiri";
+        const bank = ["Mandiri", "BCA", "BSI", "BRI", "CIMB", "SeaBank", "GoPay", "DANA", "Tunai", "Lainnya"].includes(body.bank) ? body.bank : "Mandiri";
         await env.DB.prepare("INSERT OR IGNORE INTO transactions (id,book,kind,amount,note,category,bank,occurred_at,source,source_key,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,"wifi","income",amount,note,"Pembayaran WiFi",bank,occurredAt,"wifi-sheet",paymentId,stamp,stamp).run();
         const row = await env.DB.prepare("SELECT id, source_key AS sourceKey FROM transactions WHERE source_key=?").bind(paymentId).first();
         return json({ ok: true, duplicate: row?.id !== id, id: row?.id });
