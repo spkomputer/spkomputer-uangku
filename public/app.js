@@ -7,6 +7,16 @@ const books = {
   wifi: ['WiFi', '⌁', '#13a383']
 };
 let rows = [], kind = 'income', editing = null, deferredPrompt = null;
+const planItems = [
+  { category: 'Listrik', label: 'Listrik', icon: '⚡', bank: 'BCA' },
+  { category: 'Air', label: 'Air', icon: '💧', bank: 'BCA' },
+  { category: 'Tagihan WiFi', label: 'Tagihan WiFi / Bandwidth', icon: '🌐', bank: 'Mandiri' },
+  { category: 'Hutang', label: 'Hutang / Cicilan', icon: '💳', bank: 'Mandiri' },
+  { category: 'Nabung Parcel', label: 'Nabung Parcel', icon: '🎁', bank: 'SeaBank' },
+  { category: 'Kompensasi WiFi', label: 'Kompensasi WiFi', icon: '🛠️', bank: 'SeaBank' },
+  { category: 'Operasional WiFi', label: 'Biaya Operasional WiFi', icon: '⚙️', bank: 'BCA' },
+  { category: 'Alat & Bahan WiFi', label: 'Alat & Bahan WiFi', icon: '🧰', bank: 'BRI' }
+];
 
 const api = async (path, opt = {}) => {
   const r = await fetch(path, { ...opt, headers: { 'content-type': 'application/json', ...(opt.headers || {}) } });
@@ -35,7 +45,8 @@ function render() {
     return `<button class="wallet" data-book="${id}"><i style="background:${b[2]}">${b[1]}</i><b>${b[0]}</b><small>${rupiah(total)}</small></button>`;
   }).join('');
   if (!$('#reportMonth').value) $('#reportMonth').value = monthNow();
-  filterRows(); renderRecap(); renderEvaluation();
+  if (!$('#planMonth').value) $('#planMonth').value = monthNow();
+  filterRows(); renderRecap(); renderPlan(); renderEvaluation();
 }
 
 function filterRows() {
@@ -65,6 +76,35 @@ function renderRecap() {
     banks[bank][x.kind] += x.amount; wallets[book][x.kind] += x.amount;
   });
   breakdown(banks, '#bankRecap'); breakdown(wallets, '#bookRecap');
+}
+
+function planStorageKey(month) { return 'uangku-plan-' + month; }
+function getPlan(month) {
+  try { return JSON.parse(localStorage.getItem(planStorageKey(month)) || '{}'); } catch { return {}; }
+}
+function renderPlan() {
+  const month = $('#planMonth')?.value || monthNow();
+  if (!$('#planList')) return;
+  const saved = getPlan(month);
+  const list = rows.filter(x => x.occurredAt.startsWith(month) && x.kind === 'expense');
+  let totalTarget = 0, totalSpent = 0;
+  $('#planList').innerHTML = planItems.map(item => {
+    const spent = list.filter(x => x.category === item.category).reduce((s, x) => s + x.amount, 0);
+    const target = Number(saved[item.category] || 0);
+    totalTarget += target; totalSpent += spent;
+    const need = Math.max(0, target - spent);
+    const pct = target ? Math.min(100, Math.round(spent / target * 100)) : 0;
+    return `<article class="plan-row"><div class="plan-icon">${item.icon}</div><div class="plan-main"><div class="plan-title"><b>${esc(item.label)}</b><small>Sumber: ${esc(item.bank)}</small></div><div class="plan-values"><label>Target <input class="plan-input" data-plan="${esc(item.category)}" inputmode="numeric" value="${target || ''}" placeholder="0"></label><div><small>Realisasi</small><b>${rupiah(spent)}</b></div><div><small>Kurang</small><b class="${need ? 'expense' : 'income'}">${rupiah(need)}</b></div></div><div class="plan-progress"><i style="width:${pct}%"></i></div></div></article>`;
+  }).join('');
+  $('#planTarget').textContent = rupiah(totalTarget);
+  $('#planSpent').textContent = rupiah(totalSpent);
+  $('#planNeed').textContent = rupiah(Math.max(0, totalTarget - totalSpent));
+}
+function savePlan() {
+  const month = $('#planMonth').value || monthNow(), data = {};
+  document.querySelectorAll('[data-plan]').forEach(i => data[i.dataset.plan] = Number(String(i.value).replace(/\D/g, '')) || 0);
+  localStorage.setItem(planStorageKey(month), JSON.stringify(data));
+  renderPlan(); toast('Target kewajiban tersimpan');
 }
 
 function renderEvaluation() {
@@ -98,13 +138,13 @@ function renderEvaluation() {
 function showView(view) {
   document.querySelectorAll('.page').forEach(p => p.hidden = p.id !== `page-${view}`);
   document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-  if (view !== 'catat') { renderRecap(); renderEvaluation(); }
+  if (view !== 'catat') { renderRecap(); renderPlan(); renderEvaluation(); }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function detectBank(t) {
   const l = t.toLowerCase();
-  return l.includes('mandiri') ? 'Mandiri' : l.includes('bca') ? 'BCA' : l.includes('bsi') ? 'BSI' : l.includes('bri') ? 'BRI' : /gopay|go pay/.test(l) ? 'GoPay' : /tunai|cash/.test(l) ? 'Tunai' : null;
+  return l.includes('mandiri') ? 'Mandiri' : l.includes('bca') ? 'BCA' : l.includes('bsi') ? 'BSI' : l.includes('bri') ? 'BRI' : l.includes('cimb') ? 'CIMB' : l.includes('seabank') ? 'SeaBank' : /gopay|go pay/.test(l) ? 'GoPay' : l.includes('dana') ? 'DANA' : /tunai|cash/.test(l) ? 'Tunai' : null;
 }
 function detectCategory(t) {
   const l = t.toLowerCase();
@@ -130,7 +170,7 @@ function openForm(x = null) {
 }
 
 $('#loginForm').onsubmit = async e => { e.preventDefault(); const btn = e.submitter || $('#loginForm button'); $('#loginError').textContent = ''; btn.disabled = true; btn.textContent = 'Memeriksa…'; try { await api('/api/login', { method: 'POST', body: JSON.stringify({ password: $('#password').value }) }); showApp(); } catch (err) { $('#loginError').textContent = err.message || 'Tidak dapat masuk. Coba lagi.'; } finally { btn.disabled = false; btn.textContent = 'Masuk'; } };
-$('#add').onclick = () => openForm(); $('#close').onclick = () => $('#editor').close(); $('#search').oninput = filterRows; $('#filter').onchange = filterRows; $('#reportMonth').onchange = () => { renderRecap(); renderEvaluation(); };
+$('#add').onclick = () => openForm(); $('#close').onclick = () => $('#editor').close(); $('#search').oninput = filterRows; $('#filter').onchange = filterRows; $('#reportMonth').onchange = () => { renderRecap(); renderEvaluation(); }; $('#planMonth').onchange = renderPlan; $('#savePlan').onclick = savePlan;
 $('#chatForm').onsubmit = async e => { e.preventDefault(); const b = parseChat($('#chatInput').value); if (!b.amount) return toast('Nominal belum terbaca'); try { rows.unshift(await api('/api/transactions', { method: 'POST', body: JSON.stringify(b) })); $('#chatInput').value = ''; render(); toast(`Tercatat melalui ${b.bank}`); } catch (err) { toast(err.message); } };
 $('#editForm').onsubmit = async e => { e.preventDefault(); const b = { id: editing, book: $('#book').value, kind, bank: $('#bank').value, category: $('#category').value, amount: Number($('#amount').value.replace(/\D/g, '')), note: $('#note').value, occurredAt: $('#date').value }; try { const x = await api('/api/transactions', { method: editing ? 'PUT' : 'POST', body: JSON.stringify(b) }); rows = editing ? rows.map(r => r.id === x.id ? x : r) : [x, ...rows]; $('#editor').close(); render(); toast('Tersimpan'); } catch (err) { toast(err.message); } };
 document.onclick = async e => {
