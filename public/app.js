@@ -6,37 +6,7 @@ const books = {
   rental: ['Rental', '💻', '#e97827'],
   wifi: ['WiFi', '⌁', '#13a383']
 };
-let rows = [], kind = 'income', editing = null, deferredPrompt = null;
-const defaultConfig = {
-  banks: [
-    { name:'BCA', purpose:'Servis', status:'active' },
-    { name:'Mandiri', purpose:'WiFi pembayaran MT01 dan MT03', status:'active' },
-    { name:'BSI', purpose:'WiFi pembayaran MT02 + angsur emas', status:'active' },
-    { name:'CIMB', purpose:'Pribadi', status:'active' },
-    { name:'SeaBank', purpose:'Dana mengendap / cadangan', status:'active' },
-    { name:'DANA', purpose:'Pembayaran WiFi opsional', status:'limited' },
-    { name:'GoPay', purpose:'Belum ditentukan', status:'limited' },
-    { name:'BRI', purpose:'Kadang dipakai pembayaran WiFi', status:'limited' },
-    { name:'Tunai', purpose:'Pembayaran tunai', status:'active' },
-    { name:'Lainnya', purpose:'Rekening atau metode lain', status:'limited' }
-  ],
-  planItems: [
-    { category:'Listrik', label:'Listrik', icon:'⚡', bank:'BCA', enabled:true },
-    { category:'Air', label:'Air', icon:'💧', bank:'BCA', enabled:true },
-    { category:'Tagihan WiFi', label:'Tagihan WiFi / Bandwidth', icon:'🌐', bank:'Mandiri', enabled:true },
-    { category:'Hutang', label:'Hutang / Cicilan', icon:'💳', bank:'BSI', enabled:true },
-    { category:'Nabung Parcel', label:'Nabung Parcel', icon:'🎁', bank:'SeaBank', enabled:true },
-    { category:'Kompensasi WiFi', label:'Kompensasi WiFi', icon:'🛠️', bank:'SeaBank', enabled:true },
-    { category:'Operasional WiFi', label:'Biaya Operasional WiFi', icon:'⚙️', bank:'Mandiri', enabled:true },
-    { category:'Alat & Bahan WiFi', label:'Alat & Bahan WiFi', icon:'🧰', bank:'Mandiri', enabled:true },
-    { category:'Dana Darurat Usaha', label:'Dana Darurat Usaha', icon:'🛡️', bank:'SeaBank', enabled:true },
-    { category:'Maintenance Jaringan', label:'Maintenance Jaringan', icon:'🔧', bank:'Mandiri', enabled:true },
-    { category:'Upgrade Jaringan', label:'Upgrade Jaringan', icon:'📡', bank:'Mandiri', enabled:true },
-    { category:'Gaji Pemilik', label:'Gaji Pemilik', icon:'👤', bank:'CIMB', enabled:true },
-    { category:'Penggantian Perangkat', label:'Penggantian Perangkat', icon:'🔄', bank:'SeaBank', enabled:true }
-  ]
-};
-let config = structuredClone(defaultConfig);
+let rows = [], accounts = [], targets = [], kind = 'income', editing = null, deferredPrompt = null;
 
 const api = async (path, opt = {}) => {
   const r = await fetch(path, { ...opt, headers: { 'content-type': 'application/json', ...(opt.headers || {}) } });
@@ -54,24 +24,21 @@ function showLogin() { $('#login').hidden = false; $('#app').hidden = true; }
 function showApp() { $('#login').hidden = true; $('#app').hidden = false; load(); }
 async function load() {
   try {
-    const [tx, cfg] = await Promise.all([api('/api/transactions'), api('/api/settings')]);
-    rows = tx; config = cfg?.banks?.length ? cfg : structuredClone(defaultConfig);
-    refreshSelectors(); renderSettings(); render();
+    const [transactions, settings] = await Promise.all([api('/api/transactions'), api('/api/settings')]);
+    rows = transactions; accounts = settings.accounts || []; targets = settings.targets || [];
+    renderBankOptions(); renderSettings(); render();
   } catch (e) { toast(e.message); }
 }
-function visibleBanks(){ return config.banks.filter(x => x.status !== 'inactive'); }
-function bankOptions(selected=''){
-  return visibleBanks().map(x => `<option value="${esc(x.name)}" ${x.name===selected?'selected':''}>${x.name==='Tunai'?'💵':/DANA|GoPay/i.test(x.name)?'📱':'🏦'} ${esc(x.name)}${x.status==='limited'?' · opsional':''}</option>`).join('');
+
+function availableAccounts() { return accounts.filter(a => a.status !== 'inactive'); }
+function accountOptions(selected = '') {
+  return availableAccounts().map(a => `<option value="${esc(a.name)}" ${a.name === selected ? 'selected' : ''}>${a.status === 'optional' ? '◌' : '●'} ${esc(a.name)}${a.status === 'optional' ? ' · opsional' : ''}</option>`).join('');
 }
-function refreshSelectors(){
-  const chat=$('#chatBank'), bank=$('#bank'), cat=$('#category');
-  if(chat){ const v=chat.value; chat.innerHTML=bankOptions(v); if(!chat.value) chat.value=visibleBanks()[0]?.name||'Tunai'; }
-  if(bank){ const v=bank.value; bank.innerHTML=bankOptions(v); if(!bank.value) bank.value=visibleBanks()[0]?.name||'Tunai'; }
-  if(cat){
-    const base=['Umum','Pribadi','Servis','Rental'];
-    const cats=[...new Set([...config.planItems.filter(x=>x.enabled).map(x=>x.category),...base])];
-    const v=cat.value; cat.innerHTML=cats.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join(''); if(cats.includes(v)) cat.value=v;
-  }
+function renderBankOptions() {
+  const currentChat = $('#chatBank').value || 'Tunai', currentForm = $('#bank').value || 'Tunai';
+  $('#chatBank').innerHTML = accountOptions(currentChat); $('#bank').innerHTML = accountOptions(currentForm);
+  if (availableAccounts().some(a => a.name === currentChat)) $('#chatBank').value = currentChat;
+  if (availableAccounts().some(a => a.name === currentForm)) $('#bank').value = currentForm;
 }
 
 function render() {
@@ -85,8 +52,7 @@ function render() {
     return `<button class="wallet" data-book="${id}"><i style="background:${b[2]}">${b[1]}</i><b>${b[0]}</b><small>${rupiah(total)}</small></button>`;
   }).join('');
   if (!$('#reportMonth').value) $('#reportMonth').value = monthNow();
-  if (!$('#planMonth').value) $('#planMonth').value = monthNow();
-  filterRows(); renderRecap(); renderPlan(); renderEvaluation();
+  filterRows(); renderRecap(); renderEvaluation();
 }
 
 function filterRows() {
@@ -118,77 +84,6 @@ function renderRecap() {
   breakdown(banks, '#bankRecap'); breakdown(wallets, '#bookRecap');
 }
 
-function planStorageKey(month) { return 'uangku-plan-' + month; }
-function getPlan(month) {
-  try { return JSON.parse(localStorage.getItem(planStorageKey(month)) || '{}'); } catch { return {}; }
-}
-function renderPlan() {
-  const month = $('#planMonth')?.value || monthNow();
-  if (!$('#planList')) return;
-  const saved = getPlan(month);
-  const list = rows.filter(x => x.occurredAt.startsWith(month) && x.kind === 'expense');
-  let totalTarget = 0, totalSpent = 0;
-  $('#planList').innerHTML = config.planItems.filter(x=>x.enabled).map(item => {
-    const spent = list.filter(x => x.category === item.category).reduce((s, x) => s + x.amount, 0);
-    const target = Number(saved[item.category] || 0);
-    totalTarget += target; totalSpent += spent;
-    const need = Math.max(0, target - spent);
-    const pct = target ? Math.min(100, Math.round(spent / target * 100)) : 0;
-    return `<article class="plan-row"><div class="plan-icon">${item.icon}</div><div class="plan-main"><div class="plan-title"><b>${esc(item.label)}</b><small>Sumber: ${esc(item.bank || 'Belum ditentukan')}</small></div><div class="plan-values"><label>Target <input class="plan-input" data-plan="${esc(item.category)}" inputmode="numeric" value="${target || ''}" placeholder="0"></label><div><small>Realisasi</small><b>${rupiah(spent)}</b></div><div><small>Kurang</small><b class="${need ? 'expense' : 'income'}">${rupiah(need)}</b></div></div><div class="plan-progress"><i style="width:${pct}%"></i></div></div></article>`;
-  }).join('');
-  $('#planTarget').textContent = rupiah(totalTarget);
-  $('#planSpent').textContent = rupiah(totalSpent);
-  $('#planNeed').textContent = rupiah(Math.max(0, totalTarget - totalSpent));
-}
-function savePlan() {
-  const month = $('#planMonth').value || monthNow(), data = {};
-  document.querySelectorAll('[data-plan]').forEach(i => data[i.dataset.plan] = Number(String(i.value).replace(/\D/g, '')) || 0);
-  localStorage.setItem(planStorageKey(month), JSON.stringify(data));
-  renderPlan(); toast('Target kewajiban tersimpan');
-}
-
-
-function renderSettings(){
-  if(!$('#bankSettings')) return;
-  $('#bankSettings').innerHTML = config.banks.map((b,i)=>`
-    <article class="setting-row">
-      <input data-bank-name="${i}" value="${esc(b.name)}" placeholder="Nama bank">
-      <input data-bank-purpose="${i}" value="${esc(b.purpose||'')}" placeholder="Fungsi rekening">
-      <select data-bank-status="${i}"><option value="active" ${b.status==='active'?'selected':''}>Aktif</option><option value="limited" ${b.status==='limited'?'selected':''}>Opsional</option><option value="inactive" ${b.status==='inactive'?'selected':''}>Nonaktif</option></select>
-      <button class="delete setting-delete" data-remove-bank="${i}" type="button">⌫</button>
-    </article>`).join('');
-  $('#targetSettings').innerHTML = config.planItems.map((t,i)=>`
-    <article class="setting-row target-row">
-      <input class="icon-input" data-target-icon="${i}" value="${esc(t.icon||'💰')}" maxlength="8">
-      <input data-target-label="${i}" value="${esc(t.label)}" placeholder="Nama target">
-      <input data-target-category="${i}" value="${esc(t.category)}" placeholder="Kategori transaksi">
-      <select data-target-bank="${i}">${config.banks.map(b=>`<option value="${esc(b.name)}" ${b.name===t.bank?'selected':''}>${esc(b.name)}</option>`).join('')}</select>
-      <label class="toggle-label"><input type="checkbox" data-target-enabled="${i}" ${t.enabled!==false?'checked':''}> Aktif</label>
-      <button class="delete setting-delete" data-remove-target="${i}" type="button">⌫</button>
-    </article>`).join('');
-}
-function readSettingsForm(){
-  config.banks = [...document.querySelectorAll('[data-bank-name]')].map((el,i)=>({
-    name:el.value.trim(),
-    purpose:document.querySelector(`[data-bank-purpose="${i}"]`)?.value.trim()||'',
-    status:document.querySelector(`[data-bank-status="${i}"]`)?.value||'active'
-  })).filter(x=>x.name);
-  config.planItems = [...document.querySelectorAll('[data-target-label]')].map((el,i)=>({
-    label:el.value.trim(),
-    category:document.querySelector(`[data-target-category="${i}"]`)?.value.trim()||el.value.trim(),
-    icon:document.querySelector(`[data-target-icon="${i}"]`)?.value.trim()||'💰',
-    bank:document.querySelector(`[data-target-bank="${i}"]`)?.value||'',
-    enabled:!!document.querySelector(`[data-target-enabled="${i}"]`)?.checked
-  })).filter(x=>x.label&&x.category);
-}
-async function saveSettings(){
-  readSettingsForm();
-  try {
-    const saved=await api('/api/settings',{method:'PUT',body:JSON.stringify(config)});
-    config={banks:saved.banks,planItems:saved.planItems};
-    refreshSelectors(); renderSettings(); renderPlan(); toast('Pengaturan tersimpan');
-  } catch(e){ toast(e.message); }
-}
 function renderEvaluation() {
   const month = $('#reportMonth').value || monthNow();
   const list = rows.filter(x => x.occurredAt.startsWith(month));
@@ -217,16 +112,46 @@ function renderEvaluation() {
   $('#evaluationTips').innerHTML = tips.map(t => `<li>${esc(t)}</li>`).join('');
 }
 
+function renderSettings() {
+  const statusText = { active: 'Aktif', optional: 'Opsional', inactive: 'Nonaktif' };
+  $('#accountSettings').innerHTML = accounts.map(a => `<article class="setting-card" data-account-card="${esc(a.id)}"><div class="setting-title"><span class="account-mark">🏦</span><div><b>${esc(a.name)}</b><small class="status-${a.status}">${statusText[a.status]}</small></div></div><div class="setting-fields"><label>Nama rekening<input data-field="name" value="${esc(a.name)}"></label><label>Fungsi<input data-field="purpose" value="${esc(a.purpose)}" placeholder="Kegunaan rekening"></label><label>Status<select data-field="status"><option value="active" ${a.status === 'active' ? 'selected' : ''}>Aktif</option><option value="optional" ${a.status === 'optional' ? 'selected' : ''}>Opsional</option><option value="inactive" ${a.status === 'inactive' ? 'selected' : ''}>Nonaktif</option></select></label></div><button class="save-setting" data-save-account="${esc(a.id)}">Simpan rekening</button></article>`).join('');
+  const sourceOptions = selected => accounts.map(a => `<option value="${esc(a.name)}" ${a.name === selected ? 'selected' : ''}>${esc(a.name)}</option>`).join('');
+  $('#targetSettings').innerHTML = targets.map(t => `<article class="setting-card" data-target-card="${esc(t.id)}"><div class="setting-title"><span class="target-icon">${esc(t.icon)}</span><div><b>${esc(t.name)}</b><small>${esc(t.category)}</small></div></div><div class="setting-fields target-fields"><label>Ikon<input data-field="icon" value="${esc(t.icon)}" maxlength="8"></label><label>Nama target<input data-field="name" value="${esc(t.name)}"></label><label>Kategori<input data-field="category" value="${esc(t.category)}"></label><label>Sumber<select data-field="sourceAccount">${sourceOptions(t.sourceAccount)}</select></label><label>Status<select data-field="status"><option value="active" ${t.status === 'active' ? 'selected' : ''}>Aktif</option><option value="inactive" ${t.status === 'inactive' ? 'selected' : ''}>Nonaktif</option></select></label></div><button class="save-setting" data-save-target="${esc(t.id)}">Simpan target</button></article>`).join('');
+  const activeTargets = targets.filter(t => t.status === 'active');
+  $('#targetsView').innerHTML = activeTargets.length ? activeTargets.map(t => `<article class="target-card"><span>${esc(t.icon)}</span><div><b>${esc(t.name)}</b><small>${esc(t.category)}</small><em>Sumber: ${esc(t.sourceAccount)}</em></div></article>`).join('') : '<div class="empty">Belum ada item rencana aktif</div>';
+}
+
+async function saveAccount(id) {
+  const card = document.querySelector(`[data-account-card="${CSS.escape(id)}"]`);
+  const old = accounts.find(a => a.id === id) || {};
+  const body = { id, name: card.querySelector('[data-field="name"]').value, purpose: card.querySelector('[data-field="purpose"]').value, status: card.querySelector('[data-field="status"]').value, sortOrder: old.sortOrder || 99 };
+  const saved = await api('/api/accounts', { method: 'POST', body: JSON.stringify(body) });
+  accounts = accounts.some(a => a.id === id) ? accounts.map(a => a.id === id ? saved : a) : [...accounts, saved];
+  renderBankOptions(); renderSettings(); toast('Rekening disimpan');
+}
+
+async function saveTarget(id) {
+  const card = document.querySelector(`[data-target-card="${CSS.escape(id)}"]`);
+  const old = targets.find(t => t.id === id) || {};
+  const body = { id, name: card.querySelector('[data-field="name"]').value, category: card.querySelector('[data-field="category"]').value, icon: card.querySelector('[data-field="icon"]').value, sourceAccount: card.querySelector('[data-field="sourceAccount"]').value, status: card.querySelector('[data-field="status"]').value, sortOrder: old.sortOrder || 99 };
+  const saved = await api('/api/targets', { method: 'POST', body: JSON.stringify(body) });
+  targets = targets.some(t => t.id === id) ? targets.map(t => t.id === id ? saved : t) : [...targets, saved];
+  renderSettings(); toast('Target disimpan');
+}
+
 function showView(view) {
   document.querySelectorAll('.page').forEach(p => p.hidden = p.id !== `page-${view}`);
   document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-  if (view !== 'catat') { renderRecap(); renderPlan(); renderEvaluation(); if(view==='atur') renderSettings(); }
+  if (view === 'rekap') renderRecap();
+  if (view === 'evaluasi') renderEvaluation();
+  if (view === 'rencana' || view === 'atur') renderSettings();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function detectBank(t) {
   const l = t.toLowerCase();
-  return l.includes('mandiri') ? 'Mandiri' : l.includes('bca') ? 'BCA' : l.includes('bsi') ? 'BSI' : l.includes('bri') ? 'BRI' : l.includes('cimb') ? 'CIMB' : l.includes('seabank') ? 'SeaBank' : /gopay|go pay/.test(l) ? 'GoPay' : l.includes('dana') ? 'DANA' : /tunai|cash/.test(l) ? 'Tunai' : null;
+  const found = [...availableAccounts()].sort((a, b) => b.name.length - a.name.length).find(a => l.includes(a.name.toLowerCase()));
+  return found?.name || (/go pay/.test(l) ? 'GoPay' : /tunai|cash/.test(l) ? 'Tunai' : null);
 }
 function detectCategory(t) {
   const l = t.toLowerCase();
@@ -246,21 +171,25 @@ function parseChat(t) {
 }
 function openForm(x = null) {
   editing = x?.id || null; kind = x?.kind || 'income'; $('#formTitle').textContent = x ? 'Edit transaksi' : 'Transaksi baru';
-  $('#book').value = x?.book || 'servis'; $('#bank').value = x?.bank || 'Tunai'; $('#category').value = x?.category || 'Umum';
+  $('#book').value = x?.book || 'servis';
+  if (x?.bank && !availableAccounts().some(a => a.name === x.bank)) $('#bank').insertAdjacentHTML('beforeend', `<option value="${esc(x.bank)}">${esc(x.bank)} · lama</option>`);
+  $('#bank').value = x?.bank || ($('#chatBank').value || 'Tunai'); $('#category').value = x?.category || 'Umum';
   $('#amount').value = x?.amount || ''; $('#note').value = x?.note || ''; $('#date').value = x?.occurredAt || new Date().toISOString().slice(0, 10);
   document.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('active', b.dataset.kind === kind)); $('#editor').showModal();
 }
 
 $('#loginForm').onsubmit = async e => { e.preventDefault(); const btn = e.submitter || $('#loginForm button'); $('#loginError').textContent = ''; btn.disabled = true; btn.textContent = 'Memeriksa…'; try { await api('/api/login', { method: 'POST', body: JSON.stringify({ password: $('#password').value }) }); showApp(); } catch (err) { $('#loginError').textContent = err.message || 'Tidak dapat masuk. Coba lagi.'; } finally { btn.disabled = false; btn.textContent = 'Masuk'; } };
-$('#add').onclick = () => openForm(); $('#close').onclick = () => $('#editor').close(); $('#search').oninput = filterRows; $('#filter').onchange = filterRows; $('#reportMonth').onchange = () => { renderRecap(); renderEvaluation(); }; $('#planMonth').onchange = renderPlan; $('#savePlan').onclick = savePlan; $('#saveSettings').onclick = saveSettings; $('#addBank').onclick = () => { readSettingsForm(); config.banks.push({name:'Bank Baru',purpose:'',status:'active'}); renderSettings(); }; $('#addTarget').onclick = () => { readSettingsForm(); config.planItems.push({category:'Target Baru',label:'Target Baru',icon:'💰',bank:visibleBanks()[0]?.name||'',enabled:true}); renderSettings(); };
+$('#add').onclick = () => openForm(); $('#close').onclick = () => $('#editor').close(); $('#search').oninput = filterRows; $('#filter').onchange = filterRows; $('#reportMonth').onchange = () => { renderRecap(); renderEvaluation(); };
+$('#addAccount').onclick = () => { const id = crypto.randomUUID(); accounts.push({ id, name: 'Rekening Baru', purpose: '', status: 'active', sortOrder: 99 }); renderSettings(); document.querySelector(`[data-account-card="${CSS.escape(id)}"] input`).focus(); };
+$('#addTarget').onclick = () => { const id = crypto.randomUUID(); targets.push({ id, name: 'Target Baru', category: 'Umum', icon: '🎯', sourceAccount: availableAccounts()[0]?.name || 'Tunai', status: 'active', sortOrder: 99 }); renderSettings(); document.querySelector(`[data-target-card="${CSS.escape(id)}"] input`).focus(); };
 $('#chatForm').onsubmit = async e => { e.preventDefault(); const b = parseChat($('#chatInput').value); if (!b.amount) return toast('Nominal belum terbaca'); try { rows.unshift(await api('/api/transactions', { method: 'POST', body: JSON.stringify(b) })); $('#chatInput').value = ''; render(); toast(`Tercatat melalui ${b.bank}`); } catch (err) { toast(err.message); } };
 $('#editForm').onsubmit = async e => { e.preventDefault(); const b = { id: editing, book: $('#book').value, kind, bank: $('#bank').value, category: $('#category').value, amount: Number($('#amount').value.replace(/\D/g, '')), note: $('#note').value, occurredAt: $('#date').value }; try { const x = await api('/api/transactions', { method: editing ? 'PUT' : 'POST', body: JSON.stringify(b) }); rows = editing ? rows.map(r => r.id === x.id ? x : r) : [x, ...rows]; $('#editor').close(); render(); toast('Tersimpan'); } catch (err) { toast(err.message); } };
 document.onclick = async e => {
   const view = e.target.closest('[data-view]')?.dataset.view; if (view) return showView(view);
+  const saveAccountId = e.target.dataset.saveAccount; if (saveAccountId) { try { await saveAccount(saveAccountId); } catch (err) { toast(err.message); } return; }
+  const saveTargetId = e.target.dataset.saveTarget; if (saveTargetId) { try { await saveTarget(saveTargetId); } catch (err) { toast(err.message); } return; }
   const k = e.target.dataset.kind; if (k) { kind = k; document.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('active', b.dataset.kind === kind)); }
   const id = e.target.dataset.edit; if (id) openForm(rows.find(x => x.id === id));
-  const rb = e.target.dataset.removeBank; if (rb !== undefined) { readSettingsForm(); config.banks.splice(Number(rb),1); renderSettings(); return; }
-  const rt = e.target.dataset.removeTarget; if (rt !== undefined) { readSettingsForm(); config.planItems.splice(Number(rt),1); renderSettings(); return; }
   const del = e.target.dataset.delete; if (del && confirm('Hapus transaksi ini?')) { try { await api('/api/transactions/remove', { method: 'POST', body: JSON.stringify({ id: del }) }); rows = rows.filter(x => x.id !== del); render(); toast('Transaksi dihapus'); } catch (err) { toast(err.message); } }
   const chip = e.target.dataset.text; if (chip) $('#chatInput').value = chip;
   const wallet = e.target.closest('[data-book]')?.dataset.book; if (wallet) { showView('catat'); $('#filter').value = wallet; filterRows(); }
