@@ -38,6 +38,10 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url); const path = url.pathname;
     try {
+      if (path === "/api/health" && request.method === "GET") {
+        const wifi = await env.DB.prepare("SELECT COUNT(*) AS total FROM transactions WHERE source='wifi-sheet'").first();
+        return json({ ok: true, release: "2026-10-06-wifi-sync", wifiSynced: Number(wifi?.total || 0) });
+      }
       if (path === "/api/login" && request.method === "POST") {
         const { password } = await request.json();
         if (!env.ADMIN_PASSWORD || password !== env.ADMIN_PASSWORD) return json({ error: "Password salah" }, 401);
